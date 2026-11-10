@@ -1,0 +1,10 @@
+- [Miss Oz visual verification](miss-oz-hero-and-loader.md) — instant screenshots often capture the intro splash; wait for it before judging the homepage.
+- [Resend email setup](resend-email-setup.md) — SDK returns {data,error}, never throws; currently in test mode via onboarding@resend.dev until domain verified; user pastes sentences into secret forms — validate.
+- [Vercel external deploy](vercel-external-deploy.md) — keep builds env-tolerant, colocate vercel.json with the artifact, and test Vercel rewrites separately from Vite preview.
+- [GitHub push credentials](github-git-transport.md) — an installed GitHub App does not necessarily authenticate local HTTPS Git pushes.
+- [Miss Oz page structure](miss-oz-page-structure.md) — keep only Events, Wholesale, and About Us on dedicated pages; the remaining existing sections stay on Home.
+- [Miss Oz supplied photos](miss-oz-photo-intent.md) — client corrected an earlier misclassification: the 12 supplied photos belong in Menu, not Wholesale or New Flavor.
+- [Miss Oz menu copy](miss-oz-menu-copy-confirmations.md) — the Thai Iced Tea taste note was explicitly approved by the client.
+- [Miss Oz flavor grid](miss-oz-flavor-grid.md) — more flavors are expected; append them without reordering or centering cards to rebalance odd row counts.
+- [Miss Oz mobile scope](miss-oz-mobile-scope.md) — 1440px desktop is the source; mobile is a ≤767px optimization, not a redesign.
+- [Browser verification](browser-verification.md) — remote testing needs the public development preview URL; local proxy URLs are only for local browsers.

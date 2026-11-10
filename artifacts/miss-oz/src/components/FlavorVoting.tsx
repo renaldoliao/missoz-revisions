@@ -1,0 +1,369 @@
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, animate, motion, useReducedMotion } from 'framer-motion';
+import { SHEET_URL } from '../lib/sheetSync';
+
+type FlavorCard = {
+  name: string;
+  note: string;
+  bg: string;
+  icon?: string;
+  mobileIcon?: string;
+  img?: string;
+};
+
+const CARDS: FlavorCard[] = [
+  { name: 'Earl Grey', note: 'black tea with fragrant bergamot', bg: '#EAD8BE', icon: '/images/icon-earl-grey.svg', mobileIcon: '/images/icon-earl-grey-mobile.svg' },
+  { name: 'Vietnam Coffee', note: 'deep roast with a creamy condensed finish', bg: '#EAD8BE', icon: '/images/icon-vietnam-coffee.svg', mobileIcon: '/images/icon-vietnam-coffee-mobile.svg', img: '/images/vietnam-coffee-vote.webp' },
+  { name: 'Honey Lavender', note: 'wildflower honey with a soft floral bloom', bg: '#E6DDF4', icon: '/images/icon-honey-lavender.svg', mobileIcon: '/images/icon-honey-lavender.svg', img: '/images/honey-lavender-vote.webp' },
+];
+const VOTE_KEY = 'missoz-flavor-vote-v4';
+
+const macklin = { fontFamily: 'var(--font-groovy)', fontWeight: 400, fontStyle: 'italic' as const };
+
+function CountUp({ to, reduce, suffix = '' }: { to: number; reduce: boolean; suffix?: string }) {
+  const [val, setVal] = useState(reduce ? to : 0);
+  useEffect(() => {
+    if (reduce) { setVal(to); return; }
+    const ctrl = animate(0, to, { duration: 0.9, ease: 'easeOut', onUpdate: v => setVal(Math.round(v)) });
+    return () => ctrl.stop();
+  }, [to, reduce]);
+  return <>{val}{suffix}</>;
+}
+
+type SheetFlavor = { name?: string; note?: string; image?: string };
+
+/** Turn the owner's flavors from the Sheet into cards, keeping the built-in art when a name matches. */
+function cardsFromSheet(list: SheetFlavor[] | undefined): FlavorCard[] {
+  const clean = (list ?? []).filter((f) => String(f?.name ?? '').trim());
+  if (!clean.length) return CARDS;
+  return clean.slice(0, 3).map((f) => {
+    const name = String(f.name).trim();
+    const known = CARDS.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    const image = String(f.image ?? '').trim();
+    return {
+      ...(known ?? { bg: '#EAD8BE' }),
+      name,
+      note: String(f.note ?? '').trim() || known?.note || '',
+      ...(image ? { img: image } : {}),
+    } as FlavorCard;
+  });
+}
+
+/** Votes and the current flavors live in the Miss Oz Google Sheet. */
+async function fetchResults() {
+  const res = await fetch(`${SHEET_URL}?action=voteResults`);
+  if (!res.ok) throw new Error();
+  const data = (await res.json()) as { ok?: boolean; votes?: Record<string, number>; flavors?: SheetFlavor[]; round?: string };
+  if (!data.ok) throw new Error('Vote totals unavailable');
+  const cards = cardsFromSheet(data.flavors);
+  const counts = cards.map(card => {
+    const count = Number(data.votes?.[card.name] ?? 0);
+    return Number.isSafeInteger(count) && count >= 0 ? count : 0;
+  });
+  return { cards, counts, round: String(data.round ?? '') };
+}
+
+async function postVote(flavor: string) {
+  // no-cors: Apps Script cannot be read cross-origin on POST, but the request completes before this resolves.
+  await fetch(SHEET_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action: 'addSubmission', submission: { type: 'vote', detail: `Voted for ${flavor}`, note: flavor, source: 'website' } }),
+  });
+}
+
+export default function FlavorVoting() {
+  const reduce = !!useReducedMotion();
+  const [votes, setVotes] = useState<number[] | null>(null);
+  const [cards, setCards] = useState<FlavorCard[]>(CARDS);
+  const [round, setRound] = useState('');
+  const [voteError, setVoteError] = useState('');
+  const [pending, setPending] = useState(false);
+  const [choice, setChoice] = useState<number | null>(null);
+  const [burst, setBurst] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const burstTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const total = votes?.reduce((a, b) => a + b, 0) ?? 0;
+  const leader = total > 0 ? votes!.indexOf(Math.max(...votes!)) : -1;
+  const revealed = choice !== null;
+
+  useEffect(() => () => { if (burstTimer.current) clearTimeout(burstTimer.current); }, []);
+  function applyResults(r: { cards: FlavorCard[]; counts: number[]; round: string }) {
+    setCards(r.cards);
+    setVotes(r.counts);
+    setRound(r.round);
+    // one vote per round: a reset or new flavors in the dashboard opens voting again
+    try {
+      const saved = JSON.parse(localStorage.getItem(VOTE_KEY) ?? '{}') as { choice?: unknown; round?: unknown };
+      const sameRound = (saved.round ?? '') === r.round;
+      if (sameRound && typeof saved.choice === 'number' && saved.choice >= 0 && saved.choice < r.cards.length) setChoice(saved.choice);
+      else setChoice(null);
+    } catch { /* ignore */ }
+  }
+  useEffect(() => {
+    fetchResults().then(applyResults).catch(() => setVoteError('Vote totals are unavailable right now.'));
+  }, []);
+
+  async function handleVote(i: number) {
+    if (revealed || pending || !votes) return;
+    setPending(true);
+    setVoteError('');
+    try {
+      await postVote(cards[i].name);
+      setChoice(i);
+      try { localStorage.setItem(VOTE_KEY, JSON.stringify({ choice: i, round })); } catch { /* ignore */ }
+      setBurst(i);
+      if (!reduce) {
+        if (burstTimer.current) clearTimeout(burstTimer.current);
+        burstTimer.current = setTimeout(() => setBurst(null), 900);
+      }
+      try {
+        const r = await fetchResults();
+        setCards(r.cards); setVotes(r.counts);
+      } catch {
+        setVotes(null);
+        setVoteError('Your vote was recorded, but totals are unavailable right now.');
+      }
+    } catch {
+      setVoteError('We could not record your vote. Please try again.');
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <motion.div
+      initial={false} whileInView={{ opacity: 1, x: 0 }}
+      viewport={{ once: true, amount: 0.1 }} transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.08 }}
+      className="flex flex-col justify-center gap-[4px]"
+      id="vote"
+      style={{ scrollMarginTop: '32px' }}
+    >
+      {/* Display headline */}
+      <div className="mb-[18px]">
+        <div className="inline-flex items-center gap-[10px] mb-[14px] self-start px-[12px] py-[5px] rounded-full"
+          style={{ background: 'rgba(232,177,190,0.24)', border: '1px solid rgba(115,32,62,0.18)' }}>
+          <span className="mobile-community-vote-label text-[9px] max-[639px]:text-[12px] tracking-[4px] uppercase font-bold"
+            style={{ color: 'var(--berry-deep)', fontFamily: 'var(--font-sans)' }}>
+            Community vote
+          </span>
+        </div>
+
+        <div className="text-[clamp(56px,6.5vw,88px)] leading-[0.88] mb-[14px]"
+          style={{ fontFamily: 'var(--font-groovy)', fontStyle: 'italic', color: 'var(--berry)', letterSpacing: '-0.02em' }}>
+          Vote Now!!
+        </div>
+
+        <p className="text-[15px] italic leading-relaxed"
+          style={{ color: 'rgba(28,13,12,0.65)' }}>
+          {revealed
+            ? 'Tallied. We churn the winner next month. ♥'
+            : 'Every couple of months, the neighborhood picks what we churn next. One vote each.'}
+        </p>
+      </div>
+
+      {/* ── Accordion ── */}
+      <div className="rounded-[16px] overflow-hidden"
+        style={{
+          background: 'rgba(255,255,255,0.72)',
+          border: '1px solid rgba(115,32,62,0.16)',
+          boxShadow: '0 10px 28px rgba(57,22,34,0.08)',
+        }}>
+        {cards.map((card, i) => {
+          const pct = total && votes ? Math.round((votes[i] / total) * 100) : 0;
+          const isChoice = choice === i;
+          const isLeader = revealed && i === leader;
+          const isOpen = expanded === i;
+          const isLast = i === cards.length - 1;
+
+          return (
+            <div key={i}>
+              {/* ── Collapsed row ── */}
+              <button
+                data-press-card
+                onClick={() => setExpanded(isOpen ? null : i)}
+                className="w-full flex items-center gap-[12px] px-[16px] py-[13px] text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--berry)]"
+                style={{ background: isOpen ? 'rgba(232,177,190,0.18)' : 'transparent', cursor: 'pointer' }}
+                aria-expanded={isOpen}
+              >
+                {/* Thumbnail in warm bg */}
+                <div className="shrink-0 w-[40px] h-[40px] rounded-[8px] flex items-center justify-center overflow-hidden"
+                  style={{ background: card.bg }}>
+                  {card.icon && (
+                    <img loading="lazy" src={card.icon} alt="" aria-hidden="true" width={34} height={34}
+                      className="vote-row-icon vote-row-icon-desktop w-[34px] h-[34px] object-contain"
+                      style={{ filter: 'drop-shadow(0 1px 3px rgba(28,13,12,0.25))' }} />
+                  )}
+                  {card.mobileIcon && (
+                    <img loading="lazy" src={card.mobileIcon} alt="" aria-hidden="true" width={34} height={34}
+                      className="vote-row-icon vote-row-icon-mobile hidden w-[34px] h-[34px] object-contain"
+                      style={{ filter: 'drop-shadow(0 1px 3px rgba(28,13,12,0.25))' }} />
+                  )}
+                </div>
+
+                {/* Name + note */}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[16.5px] leading-tight truncate"
+                    style={{ ...macklin, color: 'var(--berry-deep)' }}>
+                    {card.name}
+                    {isLeader && (
+                      <span className="ml-[8px] text-[8.5px] tracking-[1px] uppercase font-bold px-[6px] py-[2px] rounded-full"
+                        style={{ background: 'var(--pink)', color: 'var(--berry-deep)', verticalAlign: 'middle', fontFamily: 'var(--font-sans)' }}>
+                        ★ leading
+                      </span>
+                    )}
+                  </div>
+                  <div className="vote-row-note text-[12px] mt-[2px]"
+                    style={{ fontFamily: 'var(--font-script-alt)', color: 'var(--berry)' }}>
+                    {card.note}
+                  </div>
+                </div>
+
+                {/* Toggle icon */}
+                <motion.div
+                  animate={{ rotate: isOpen ? 45 : 0 }}
+                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                  className="shrink-0 w-[24px] h-[24px] rounded-full flex items-center justify-center text-[15px] font-light leading-none select-none"
+                  style={{
+                    color: isOpen ? 'var(--cream-hi)' : 'var(--berry)',
+                    background: isOpen ? 'var(--berry)' : 'rgba(115,32,62,0.06)',
+                    border: '1.5px solid rgba(115,32,62,0.25)',
+                  }}
+                  aria-hidden="true"
+                >+</motion.div>
+              </button>
+
+              {/* ── Expanded card — cream panel pops on dark bg ── */}
+              <AnimatePresence initial={false}>
+                {isOpen && (
+                  <motion.div
+                    key="expanded"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{
+                      height: { duration: 0.35, ease: [0.22, 1, 0.36, 1] },
+                      opacity: { duration: 0.22, delay: 0.06, ease: [0.22, 1, 0.36, 1] },
+                    }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <div className="px-[12px] pb-[12px]">
+                      <div className="relative rounded-[12px] overflow-hidden"
+                        style={{
+                          background: 'var(--cream-hi)',
+                          boxShadow: isLeader
+                            ? '0 12px 30px rgba(57,22,34,0.16), 0 0 0 2px var(--pink)'
+                            : '0 8px 24px rgba(57,22,34,0.12)',
+                        }}>
+                        <div className="vote-expanded-content flex items-center gap-[14px] p-[14px]">
+                          {/* Larger image */}
+                          <div className={`vote-expanded-photo ${card.img ? 'vote-expanded-photo--real' : 'vote-expanded-photo--placeholder'} shrink-0 w-[132px] h-[132px] rounded-[10px] flex items-center justify-center overflow-hidden`}
+                            style={{ background: card.bg }}>
+                            {(card.img || card.icon) && (
+                              <img loading="lazy" src={card.img ?? card.icon!}
+                                alt={card.img ? `A serving of ${card.name} ice cream` : `${card.name} tea cup illustration`}
+                                width={132} height={132}
+                                className={card.img ? 'w-full h-full object-cover' : 'w-[88px] h-[88px] object-contain'}
+                                style={{ filter: 'drop-shadow(0 3px 7px rgba(28,13,12,0.28))' }} />
+                            )}
+                          </div>
+
+                          {/* Details + CTA */}
+                          <div className="vote-expanded-details flex-1 min-w-0">
+                            <div className="vote-expanded-copy">
+                              <div className="text-[19px] leading-tight mb-[3px]"
+                                style={{ ...macklin, color: 'var(--cocoa)' }}>
+                                {card.name}
+                              </div>
+                              <div className="text-[13px] mb-[12px]"
+                                style={{ fontFamily: 'var(--font-script-alt)', color: 'var(--berry)' }}>
+                                {card.note}
+                              </div>
+                            </div>
+
+                            {/* Burst particles */}
+                            {burst === i && !reduce && (
+                              <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-30">
+                                {Array.from({ length: 10 }).map((_, s) => {
+                                  const ang = (s / 10) * Math.PI * 2;
+                                  return (
+                                    <motion.span key={s} className="absolute text-[13px]"
+                                      initial={{ opacity: 1, x: 0, y: 0, scale: 0.4 }}
+                                      animate={{ opacity: 0, x: Math.cos(ang) * 68, y: Math.sin(ang) * 68, scale: 1 }}
+                                      transition={{ duration: 0.85, ease: 'easeOut' }}
+                                      style={{ color: s % 2 ? 'var(--pink)' : 'var(--berry)' }}>
+                                      {s % 3 === 0 ? '♥' : '✦'}
+                                    </motion.span>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {!revealed ? (
+                              <button onClick={() => handleVote(i)} disabled={!votes || pending}
+                                className="interaction-primary relative vote-btn clickable font-sans border-none py-[8px] px-[20px] rounded-full text-[12.5px] font-semibold tracking-[0.4px] mech-btn transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--berry)] disabled:opacity-50 disabled:cursor-not-allowed"
+                                style={{ background: 'var(--cocoa)', color: 'var(--cream-hi)', fontFamily: 'var(--font-sans)' }}>
+                                {pending ? 'Recording vote…' : 'Vote for this ♥'}
+                                {burst === i && !reduce && [...Array(8)].map((_, j) => {
+                                  const angle = (j * 45 + Math.random() * 20 - 10) * (Math.PI / 180);
+                                  const dist = 34 + Math.random() * 16;
+                                  const colors = ['var(--berry)', 'var(--pink)', 'var(--cream-hi)'];
+                                  return (
+                                    <span key={j} className="sprinkle"
+                                      style={{ '--tx': Math.cos(angle) * dist + 'px', '--ty': Math.sin(angle) * dist + 'px', '--r': Math.random() * 360 + 'deg', backgroundColor: colors[j % colors.length] } as React.CSSProperties} />
+                                  );
+                                })}
+                              </button>
+                            ) : (
+                              <div className="vote-result flex items-center gap-[10px]">
+                                <div className="text-[26px] leading-none shrink-0"
+                                  style={{ ...macklin, color: 'var(--cocoa)' }}>
+                                  <CountUp to={pct} reduce={reduce} suffix="%" />
+                                </div>
+                                <div className="flex-1">
+                                  <div className="h-[6px] rounded-full overflow-hidden"
+                                    style={{ background: 'rgba(28,13,12,0.1)' }}>
+                                    <motion.div className="h-full rounded-full"
+                                      style={{ background: isLeader ? 'var(--berry)' : 'var(--pink)' }}
+                                      initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+                                      transition={reduce ? { duration: 0 } : { duration: 0.9, ease: 'easeOut', delay: 0.1 }} />
+                                  </div>
+                                  <div className="text-[10.5px] mt-[4px]"
+                                    style={{ color: 'var(--cocoa)', opacity: 0.55, fontFamily: 'var(--font-sans)' }}>
+                                    {votes ? <><CountUp to={votes[i]} reduce={reduce} /> votes</> : <span className="api-availability-message">Totals unavailable</span>}
+                                    {isChoice && <span className="ml-1 font-bold" style={{ color: 'var(--berry-deep)', opacity: 1 }}>· your pick ♥</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {revealed && (
+                              <div className="vote-thanks-label hidden" role="status">
+                                Thanks for voting <span aria-hidden="true">✓</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {!isLast && (
+                <div className="mx-[16px] h-px" style={{ background: 'rgba(115,32,62,0.12)' }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Vote total */}
+      <div className={`vote-total mt-[14px] text-[10.5px] max-[639px]:text-[12px] tracking-[3px] uppercase font-semibold ${voteError.includes('unavailable') ? 'api-availability-message' : ''}`}
+        style={{ color: 'rgba(115,32,62,0.6)', fontFamily: 'var(--font-sans)' }}>
+        {voteError || (votes ? (total === 0 ? 'No votes yet. Be the first.' : `${total.toLocaleString()} neighbors have voted`) : 'Loading vote totals…')}
+      </div>
+    </motion.div>
+  );
+}
