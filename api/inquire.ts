@@ -8,7 +8,7 @@
  */
 import { buildEmail, sendEmail, readBody, hasResend, TO_EMAIL, type FieldRow, type Req, type Res } from "./_lib/mail";
 
-const WHOLESALE_TO_EMAIL = "behappy@missozicecream.com";
+const WHOLESALE_TO_EMAIL = "renaldoliao@gmail.com"; // TEST COPY: never Millie's inbox
 
 type InquiryType = "wholesale" | "event" | "general";
 
