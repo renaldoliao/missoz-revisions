@@ -203,7 +203,9 @@ export function resolveContactEmail(raw: string | undefined, fallback: string): 
   return fallback;
 }
 
-export const TO_EMAIL = resolveContactEmail(process.env.CONTACT_EMAIL, "behappy@missozicecream.com");
+// TEST COPY: order and message emails always go to Renaldo, never to Millie's inbox.
+export const TO_EMAIL = "renaldoliao@gmail.com";
+void resolveContactEmail;
 export const FROM_EMAIL = process.env.FROM_EMAIL ?? "Miss Oz Website <noreply@missozicecream.com>";
 export const hasResend = (): boolean => Boolean(process.env.RESEND_API_KEY);
 
