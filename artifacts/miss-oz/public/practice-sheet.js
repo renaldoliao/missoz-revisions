@@ -62,7 +62,7 @@
       var votes = {}; voteRows(db).forEach(function (s) { var f = s.note || ""; votes[f] = (votes[f] || 0) + 1; });
       return { ok: true, votes: votes, flavors: db.voteSetup.flavors, round: db.voteSetup.round };
     }
-    if (action === "guestbook") return { ok: true, entries: db.submissions.filter(function (s) { return s.type === "guestbook"; }).map(function (s) { return { id: s.id, name: s.name, note: s.note, when: s.date }; }).reverse() };
+    if (action === "guestbook") return { ok: true, entries: db.submissions.filter(function (s) { return s.type === "guestbook" && s.status !== "hidden" && s.status !== "deleted"; }).sort(function (a, b) { return (b.status === "pinned") - (a.status === "pinned"); }).map(function (s) { return { id: s.id, name: s.name, note: s.note, when: s.date }; }).reverse() };
     if (action === "addSubmission") {
       var t = today(0), s = body.submission || {};
       db.submissions.push(Object.assign({ id: s.id || "p" + Date.now().toString(36), date: t.date, time: t.time, status: "new" }, s));
@@ -80,7 +80,7 @@
     if (!authed) return { ok: false, error: "unauthorized" };
 
     // dashboard
-    if (action === "state") return { ok: true, menu: db.menu, menuVersion: db.menuVersion, text: db.text, submissions: db.submissions, voteSetup: db.voteSetup };
+    if (action === "state") return { ok: true, menu: db.menu, menuVersion: db.menuVersion, text: db.text, submissions: db.submissions.filter(function (s) { return s.status !== "deleted"; }), voteSetup: db.voteSetup };
     if (action === "seedMenu") { if (!db.menu.length) { db.menu = (body.menu || []).map(function (d) { return Object.assign({}, d, { on: isOn(d) ? "yes" : "no" }); }); db.menuVersion++; save(); } return { ok: true, menu: db.menu, menuVersion: db.menuVersion }; }
     if (action === "saveMenu") {
       if (body.baseVersion && body.baseVersion !== db.menuVersion) return { ok: false, error: "conflict" };

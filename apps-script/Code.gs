@@ -29,8 +29,10 @@ function handle_(method, q, b) {
     if (action === 'site') return { ok: true, menu: readRows_('Menu', MENU_COLS).filter(isOn_), text: siteText_() };
     if (action === 'voteResults') return voteResults_();
     if (action === 'guestbook') {
-      return { ok: true, entries: readRows_('Submissions', SUB_COLS).filter(function (s) { return s.type === 'guestbook'; })
-        .map(function (s) { return { id: s.id, name: s.name, note: s.note, when: s.date }; }).reverse() };
+      // shown on the website: not hidden, not deleted; pinned notes first, then newest first
+      var notes = readRows_('Submissions', SUB_COLS).filter(function (s) { return s.type === 'guestbook' && s.status !== 'hidden' && s.status !== 'deleted'; }).reverse();
+      var pinned = notes.filter(function (s) { return s.status === 'pinned'; }), rest = notes.filter(function (s) { return s.status !== 'pinned'; });
+      return { ok: true, entries: pinned.concat(rest).map(function (s) { return { id: s.id, name: s.name, note: s.note, when: s.date }; }) };
     }
     if (action === 'addSubmission') return withLock_(function () { return addSubmission_(b.submission || {}); });
 
@@ -55,7 +57,7 @@ function handle_(method, q, b) {
     // dashboard (signed in)
     if (action === 'state') {
       return { ok: true, menu: readRows_('Menu', MENU_COLS), menuVersion: menuVersion_(), text: readRows_('Website Text', TEXT_COLS),
-        submissions: readRows_('Submissions', SUB_COLS), voteSetup: voteSetup_() };
+        submissions: readRows_('Submissions', SUB_COLS).filter(function (s) { return s.status !== 'deleted'; }), voteSetup: voteSetup_() };
     }
     return withLock_(function () {
       if (action === 'seedMenu') {
@@ -144,7 +146,7 @@ function voteSetup_() {
 }
 function voteResults_() {
   var votes = {};
-  readRows_('Submissions', SUB_COLS).forEach(function (s) { if (s.type === 'vote') { var f = s.note || ''; votes[f] = (votes[f] || 0) + 1; } });
+  readRows_('Submissions', SUB_COLS).forEach(function (s) { if (s.type === 'vote' && s.status !== 'deleted') { var f = s.note || ''; votes[f] = (votes[f] || 0) + 1; } });
   var v = voteSetup_();
   return { ok: true, votes: votes, flavors: v.flavors, round: v.round };
 }
