@@ -1015,7 +1015,7 @@
     const b = $("subsBadge"); b.textContent = n; b.hidden = !n; requestAnimationFrame(moveInk);
   }
   // ---------- google sheets backend ----------
-  const SHEET_API = "https://practice-sheet.invalid/exec";                               // paste your Apps Script /exec URL here to go live
+  const SHEET_API = "https://script.google.com/macros/s/AKfycbwTypfpglpoh6yvgl-lrc2maWw_hbSMRsOOKX7iLuZoUOUYPvdu_tgwi4pxfASw24KlXg/exec";                               // paste your Apps Script /exec URL here to go live
   const PASS_KEY = "missoz-dash-pass";
   let API_TOKEN = (() => { try { return localStorage.getItem(PASS_KEY) || sessionStorage.getItem(PASS_KEY) || ""; } catch(e){ return ""; } })();
   function forgetPass(){ try { localStorage.removeItem(PASS_KEY); sessionStorage.removeItem(PASS_KEY); } catch(e){} }

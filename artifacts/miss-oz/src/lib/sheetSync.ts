@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
  * The owner dashboard edits the Menu tab; the site reads it here and drops every
  * form submission into the Submissions tab. */
 export const SHEET_URL =
-  'https://practice-sheet.invalid/exec';
+  'https://script.google.com/macros/s/AKfycbwTypfpglpoh6yvgl-lrc2maWw_hbSMRsOOKX7iLuZoUOUYPvdu_tgwi4pxfASw24KlXg/exec';
 
 /** Category names exactly as the dashboard writes them. */
 export type SheetCategory = 'Ice cream flavors' | 'Sundaes' | 'Croffles' | 'Cookies & desserts' | 'Drinks';

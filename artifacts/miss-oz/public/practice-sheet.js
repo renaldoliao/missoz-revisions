@@ -1,5 +1,5 @@
 /*
- * PRACTICE MODE (test copy only, never on the live site).
+ * TEST COPY MARKER (never on the live site).
  *
  * The real website and dashboard talk to Millie's Google Sheet. In this test copy
  * every Sheet link points to PRACTICE_URL instead, and this file answers those
@@ -122,8 +122,8 @@
   function badge() {
     if (document.getElementById("practice-badge")) return;
     var b = document.createElement("a");
-    b.id = "practice-badge"; b.href = "/dashboard.html?reset"; b.title = "Test copy. Click to start the practice data over.";
-    b.textContent = "PRACTICE COPY, not live";
+    b.id = "practice-badge"; b.href = "/"; b.title = "Test copy. Saves to the TEST Google Sheet, never to Millie's.";
+    b.textContent = "TEST COPY, not live";
     b.style.cssText = "position:fixed;left:10px;bottom:10px;z-index:99999;background:#2b1a22;color:#fbf2df;font:600 11px/1 system-ui,sans-serif;letter-spacing:.08em;padding:7px 10px;border-radius:999px;text-decoration:none;opacity:.85";
     document.body.appendChild(b);
   }

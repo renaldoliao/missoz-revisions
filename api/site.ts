@@ -10,7 +10,7 @@
 import type { Req, Res } from "./_lib/mail";
 
 const SHEET_URL =
-  "https://practice-sheet.invalid/exec";
+  "https://script.google.com/macros/s/AKfycbwTypfpglpoh6yvgl-lrc2maWw_hbSMRsOOKX7iLuZoUOUYPvdu_tgwi4pxfASw24KlXg/exec";
 
 export default async function handler(_req: Req, res: Res) {
   try {
