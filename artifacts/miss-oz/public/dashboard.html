@@ -81,6 +81,17 @@
   .menu-sec-head .meta .off { color: var(--amber); font-weight: 600; }
   .menu-sec-head .add { white-space: nowrap; }
   .menu-empty { color: var(--ink-soft); font-size: 14px; padding: 10px 2px; }
+
+  /* drag to reorder */
+  .drag-btn { position: absolute; top: 10px; left: 10px; width: 32px; height: 32px; border-radius: 50%; background: #fff; border: none; display: grid; place-items: center; cursor: grab; box-shadow: 0 2px 8px rgba(52,6,32,.15); z-index: 2; touch-action: none; color: var(--wine); -webkit-tap-highlight-color: transparent; }
+  .drag-btn:focus-visible { outline: 2px solid var(--wine); outline-offset: 2px; }
+  .dish.drag-ghost { position: fixed; z-index: 1000; pointer-events: none; box-shadow: 0 18px 40px rgba(52,6,32,.22); transform: rotate(1.5deg) scale(1.03); opacity: .96; }
+  .dish.drag-spot { border: 2px dashed var(--blush); background: var(--paper); }
+  .dish.drag-spot > * { visibility: hidden; }
+  body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select: none; }
+  .order-hint { font-size: 13px; color: var(--ink-soft); margin: -4px 0 12px; }
+  .moved-flash { animation: movedFlash .9s ease; }
+  @keyframes movedFlash { 0% { box-shadow: 0 0 0 3px var(--green); } 100% { box-shadow: 0 0 0 0 transparent; } }
   .dish-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(188px, 1fr)); gap: 16px; }
   .dish { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; }
   .dish.off { opacity: .5; }
@@ -623,6 +634,85 @@
     CATS.forEach(c => { const n = dishes.filter(d=>d.cat===c).length; if(n) mk(c, c, n); });
   }
 
+
+  // ---------- drag to reorder (order within a section = order on the website) ----------
+  const GRIP = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><g fill="currentColor"><circle cx="4.5" cy="3" r="1.4"/><circle cx="9.5" cy="3" r="1.4"/><circle cx="4.5" cy="7" r="1.4"/><circle cx="9.5" cy="7" r="1.4"/><circle cx="4.5" cy="11" r="1.4"/><circle cx="9.5" cy="11" r="1.4"/></g></svg>';
+  let reordering = false;
+  function applyOrder(cat, ids){
+    // put this section's dishes in the new order, keep every other dish where it was
+    const inCat = ids.map(id => dishes.find(x => String(x.id) === id)).filter(Boolean);
+    let k = 0;
+    dishes = dishes.map(x => x.cat === cat ? inCat[k++] : x);
+  }
+  function finishMove(cat, ids, movedId){
+    const before = dishes.filter(x => x.cat === cat).map(x => String(x.id)).join(",");
+    if (before === ids.join(",")) { renderGrid(); return; }
+    applyOrder(cat, ids);
+    renderGrid();
+    const c = grid.querySelector('.dish[data-id="'+movedId+'"]');
+    if (c){ c.classList.add("moved-flash"); const b = c.querySelector(".drag-btn"); if (b) b.focus({ preventScroll: true }); }
+    persistMenu();
+  }
+  function wireDrag(btn, card, d){
+    // keyboard: arrows move one place
+    btn.addEventListener("keydown", e => {
+      const k = e.key, step = (k === "ArrowLeft" || k === "ArrowUp") ? -1 : (k === "ArrowRight" || k === "ArrowDown") ? 1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const ids = dishes.filter(x => x.cat === d.cat).map(x => String(x.id));
+      const i = ids.indexOf(String(d.id)), j = i + step;
+      if (j < 0 || j >= ids.length) return;
+      ids.splice(j, 0, ids.splice(i, 1)[0]);
+      finishMove(d.cat, ids, String(d.id));
+    });
+    // pointer: mouse, finger or pen
+    btn.addEventListener("pointerdown", e => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      e.preventDefault();
+      const box = card.parentElement, r = card.getBoundingClientRect();
+      const offX = e.clientX - r.left, offY = e.clientY - r.top;
+      const ghost = card.cloneNode(true);
+      ghost.classList.add("drag-ghost"); ghost.style.width = r.width + "px"; ghost.style.height = r.height + "px";
+      ghost.style.left = r.left + "px"; ghost.style.top = r.top + "px";
+      document.body.appendChild(ghost);
+      card.classList.add("drag-spot");
+      document.body.classList.add("is-dragging");
+      reordering = true;
+      let lastY = e.clientY, scrollTimer = null;
+      const move = ev => {
+        lastY = ev.clientY;
+        ghost.style.left = (ev.clientX - offX) + "px"; ghost.style.top = (ev.clientY - offY) + "px";
+        // find the card under the finger in the same section and slide the gap there
+        const over = [...box.children].find(c => {
+          if (c === card) return false;
+          const b = c.getBoundingClientRect();
+          return ev.clientX >= b.left && ev.clientX <= b.right && ev.clientY >= b.top && ev.clientY <= b.bottom;
+        });
+        if (over){
+          const list = [...box.children], from = list.indexOf(card), to = list.indexOf(over);
+          box.insertBefore(card, from < to ? over.nextSibling : over);
+        }
+      };
+      // scroll the page when dragging near the top or bottom edge
+      scrollTimer = setInterval(() => {
+        const edge = 70, h = window.innerHeight;
+        if (lastY < edge) window.scrollBy(0, -12); else if (lastY > h - edge) window.scrollBy(0, 12);
+      }, 16);
+      const end = () => {
+        clearInterval(scrollTimer);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+        ghost.remove(); card.classList.remove("drag-spot"); document.body.classList.remove("is-dragging");
+        reordering = false;
+        finishMove(d.cat, [...box.children].map(c => c.dataset.id), String(d.id));
+      };
+      // listen on the window: moving the card in the page would drop a capture on the button
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", end);
+      window.addEventListener("pointercancel", end);
+    });
+  }
   function renderGrid(){
     const q = $("dishSearch").value.trim().toLowerCase();
     const rows = dishes.filter(d => !q || d.name.toLowerCase().includes(q) || d.desc.toLowerCase().includes(q));
@@ -638,6 +728,7 @@
       sec.className = "menu-sec"; sec.id = secId(cat);
       sec.innerHTML = '<div class="menu-sec-head"><div><h3 style="display:inline">'+h(cat)+'</h3><span class="meta">'+all.length+(all.length===1?" item":" items")+(off ? ' &middot; <span class="off">'+off+' hidden</span>' : '')+'</span></div>' +
         '<button class="link add" data-add="'+h(cat)+'">+ Add to '+h(cat)+'</button></div>' +
+        (inCat.length && !q && inCat.length > 1 ? '<p class="order-hint">Drag the dots on a photo to change the order on your website.</p>' : '') +
         (inCat.length ? '<div class="dish-grid"></div>' : '<p class="menu-empty">Nothing here yet.</p>');
       sec.querySelector("[data-add]").addEventListener("click", () => { openDish(null); $("dmCat").value = cat; });
       grid.appendChild(sec);
@@ -652,6 +743,7 @@
           (d.photo ? '<img alt="'+esc(d.name)+'" src="'+d.photo+'" loading="lazy" style="'+cropCss(effCrop(d))+'">' : CAMERA) +
           (d.price ? '<span class="price-badge">'+esc(d.price)+'</span>' : '') +
           '<button class="edit-btn" type="button" aria-label="Edit dish">'+PENCIL+'</button>' +
+          (!q ? '<button class="drag-btn" type="button" aria-label="Move '+esc(d.name)+'. Drag, or use the arrow keys">'+GRIP+'</button>' : '') +
         '</div>' +
         '<div class="dish-body">' +
           '<div class="dish-name">'+d.name+'</div>' +
@@ -661,6 +753,8 @@
         '</div>';
       // edit
       card.querySelector(".edit-btn").addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); openDish(d); });
+      card.dataset.id = String(d.id);
+      const grip = card.querySelector(".drag-btn"); if (grip) wireDrag(grip, card, d);
       // toggle
       card.querySelector('input[type=checkbox]').addEventListener("change", async e => {
         const want = e.target.checked;
@@ -1170,7 +1264,7 @@
   function refreshSoon(ms){ clearTimeout(soonTimer); soonTimer = setTimeout(() => refresh(false), ms); }
   function busyEditing(){
     const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest("#txtGroups");
-    return pending > 0 || !!saveTimer || publishing || !!typing || dishModal.classList.contains("show") || $("askModal").classList.contains("show") || editingVote || !!confirmKey;
+    return reordering || pending > 0 || !!saveTimer || publishing || !!typing || dishModal.classList.contains("show") || $("askModal").classList.contains("show") || editingVote || !!confirmKey;
   }
   function setSynced(state){
     const el = $("syncedAt"); if (!el) return;
