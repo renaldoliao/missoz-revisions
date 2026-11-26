@@ -118,14 +118,19 @@
     });
   };
 
-  // a small label so nobody mistakes this for the real thing
+  // a small label so nobody mistakes this for the real thing.
+  // Dashboard: a plain strip above the page, so it never covers a button.
+  // Website: a small pill in the corner that taps pass straight through.
   function badge() {
     if (document.getElementById("practice-badge")) return;
-    var b = document.createElement("a");
-    b.id = "practice-badge"; b.href = "/"; b.title = "Test copy. Saves to the TEST Google Sheet, never to Millie's.";
-    b.textContent = "TEST COPY, not live";
-    b.style.cssText = "position:fixed;left:10px;bottom:10px;z-index:99999;background:#2b1a22;color:#fbf2df;font:600 11px/1 system-ui,sans-serif;letter-spacing:.08em;padding:7px 10px;border-radius:999px;text-decoration:none;opacity:.85";
-    document.body.appendChild(b);
+    var onDash = /dashboard/.test(location.pathname);
+    var b = document.createElement("div");
+    b.id = "practice-badge"; b.setAttribute("role", "note");
+    b.textContent = onDash ? "TEST COPY, not live. Changes here never reach your real website." : "TEST COPY, not live";
+    b.style.cssText = onDash
+      ? "display:block;width:100%;background:#2b1a22;color:#fbf2df;font:600 11px/1.3 system-ui,sans-serif;letter-spacing:.06em;text-align:center;padding:7px 12px;box-sizing:border-box"
+      : "position:fixed;left:10px;bottom:10px;z-index:99999;pointer-events:none;background:#2b1a22;color:#fbf2df;font:600 11px/1 system-ui,sans-serif;letter-spacing:.08em;padding:7px 10px;border-radius:999px;opacity:.85";
+    if (onDash) document.body.insertBefore(b, document.body.firstChild); else document.body.appendChild(b);
   }
   if (document.body) badge(); else document.addEventListener("DOMContentLoaded", badge);
 })();
